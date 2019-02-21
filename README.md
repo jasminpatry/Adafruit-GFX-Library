@@ -1,3 +1,9 @@
+# Fork of Adafruit_GFX to add support for `ILI9341_t3_font_t` fonts
+
+I wanted to be able to use the large library of fonts available in `ILI9341_t3_font_t` format (such as [these](https://github.com/FrankBoesing/fonts)) for offscreen rendering (e.g. using the `GFXcanvas1` class), so I ported the font rendering code from the [ILI9341_t3](https://github.com/PaulStoffregen/ILI9341_t3) library into `Adafruit_GFX`. Tested on the Teensy 3.6; YMMV.
+
+Original README continues below:
+
 # Adafruit GFX Library # [![Build Status](https://travis-ci.org/adafruit/Adafruit-GFX-Library.svg?branch=master)](https://travis-ci.org/adafruit/Adafruit-GFX-Library)
 
 This is the core graphics library for all our displays, providing a common set of graphics primitives (points, lines, circles, etc.). It needs to be paired with a hardware-specific library for each display device we carry (to handle the lower-level functions).

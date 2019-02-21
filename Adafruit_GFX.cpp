@@ -89,6 +89,7 @@ WIDTH(w), HEIGHT(h)
     wrap      = true;
     _cp437    = false;
     gfxFont   = NULL;
+    t3font    = NULL;
 }
 
 /**************************************************************************/
@@ -1129,7 +1130,14 @@ void Adafruit_GFX::drawChar(int16_t x, int16_t y, unsigned char c,
 */
 /**************************************************************************/
 size_t Adafruit_GFX::write(uint8_t c) {
-    if(!gfxFont) { // 'Classic' built-in font
+	if(t3font) { // Custom ILI9341_t3_font_t font
+		if(c == '\n') {
+			cursor_y += t3font->line_space;
+			cursor_x = 0;
+		} else if (c != '\r') {
+			drawT3FontChar(c);
+		}
+	} else if(!gfxFont) { // 'Classic' built-in font
 
         if(c == '\n') {                        // Newline?
             cursor_x  = 0;                     // Reset x to zero,
@@ -1143,7 +1151,7 @@ size_t Adafruit_GFX::write(uint8_t c) {
             cursor_x += textsize * 6;          // Advance x one char
         }
 
-    } else { // Custom font
+    } else { // Custom GFXfont font
 
         if(c == '\n') {
             cursor_x  = 0;
@@ -1171,6 +1179,206 @@ size_t Adafruit_GFX::write(uint8_t c) {
 
     }
     return 1;
+}
+
+// ILI9341_t3_font_t code from https://github.com/PaulStoffregen/ILI9341_t3,
+// adapated for use here by Jasmin Patry (jasmin.patry@gmail.com)
+
+static uint32_t fetchbit(const uint8_t *p, uint32_t index)
+{
+	if (p[index >> 3] & (1 << (7 - (index & 7)))) return 1;
+	return 0;
+}
+
+static uint32_t fetchbits_unsigned(const uint8_t *p, uint32_t index, uint32_t required)
+{
+	uint32_t val = 0;
+	do {
+		uint8_t b = p[index >> 3];
+		uint32_t avail = 8 - (index & 7);
+		if (avail <= required) {
+			val <<= avail;
+			val |= b & ((1 << avail) - 1);
+			index += avail;
+			required -= avail;
+		} else {
+			b >>= avail - required;
+			val <<= required;
+			val |= b & ((1 << required) - 1);
+			break;
+		}
+	} while (required);
+	return val;
+}
+
+static uint32_t fetchbits_signed(const uint8_t *p, uint32_t index, uint32_t required)
+{
+	uint32_t val = fetchbits_unsigned(p, index, required);
+	if (val & (1 << (required - 1))) {
+		return (int32_t)val - (1 << required);
+	}
+	return (int32_t)val;
+}
+
+
+void Adafruit_GFX::drawT3FontChar(unsigned int c)
+{
+	uint32_t bitoffset;
+	const uint8_t *data;
+	ILI9341_t3_font_t const *font = t3font;
+
+	// Serial.printf("drawT3FontChar %d\n", c);
+
+	if (c >= font->index1_first && c <= font->index1_last) {
+		bitoffset = c - font->index1_first;
+		bitoffset *= font->bits_index;
+	} else if (c >= font->index2_first && c <= font->index2_last) {
+		bitoffset = c - font->index2_first + font->index1_last - font->index1_first + 1;
+		bitoffset *= font->bits_index;
+	} else if (font->unicode) {
+		return; // TODO: implement sparse unicode
+	} else {
+		return;
+	}
+	//Serial.printf("  index =  %d\n", fetchbits_unsigned(font->index, bitoffset, font->bits_index));
+	data = font->data + fetchbits_unsigned(font->index, bitoffset, font->bits_index);
+
+	uint32_t encoding = fetchbits_unsigned(data, 0, 3);
+	if (encoding != 0) return;
+	uint32_t width = fetchbits_unsigned(data, 3, font->bits_width);
+	bitoffset = font->bits_width + 3;
+	uint32_t height = fetchbits_unsigned(data, bitoffset, font->bits_height);
+	bitoffset += font->bits_height;
+	//Serial.printf("  size =   %d,%d\n", width, height);
+
+	int32_t xoffset = fetchbits_signed(data, bitoffset, font->bits_xoffset);
+	bitoffset += font->bits_xoffset;
+	int32_t yoffset = fetchbits_signed(data, bitoffset, font->bits_yoffset);
+	bitoffset += font->bits_yoffset;
+	//Serial.printf("  offset = %d,%d\n", xoffset, yoffset);
+
+	uint32_t delta = fetchbits_unsigned(data, bitoffset, font->bits_delta);
+	bitoffset += font->bits_delta;
+	//Serial.printf("  delta =  %d\n", delta);
+
+	//Serial.printf("  cursor = %d,%d\n", cursor_x, cursor_y);
+
+	// horizontally, we draw every pixel, or none at all
+	if (cursor_x < 0) cursor_x = 0;
+	int32_t origin_x = cursor_x + xoffset;
+	if (origin_x < 0) {
+		cursor_x -= xoffset;
+		origin_x = 0;
+	}
+	if (origin_x + (int)width > _width) {
+		if (!wrap) return;
+		origin_x = 0;
+		if (xoffset >= 0) {
+			cursor_x = 0;
+		} else {
+			cursor_x = -xoffset;
+		}
+		cursor_y += font->line_space;
+	}
+	if (cursor_y >= _height) return;
+	cursor_x += delta;
+
+	// vertically, the top and/or bottom can be clipped
+	int32_t origin_y = cursor_y + font->cap_height - height - yoffset;
+	//Serial.printf("  origin = %d,%d\n", origin_x, origin_y);
+
+	// TODO: compute top skip and number of lines
+	int32_t linecount = height;
+	//uint32_t loopcount = 0;
+	uint32_t y = origin_y;
+	while (linecount) {
+		//Serial.printf("    linecount = %d\n", linecount);
+		uint32_t b = fetchbit(data, bitoffset++);
+		if (b == 0) {
+			//Serial.println("    single line");
+			uint32_t x = 0;
+			do {
+				uint32_t xsize = width - x;
+				if (xsize > 32) xsize = 32;
+				uint32_t bits = fetchbits_unsigned(data, bitoffset, xsize);
+				drawT3FontBits(bits, xsize, origin_x + x, y, 1);
+				bitoffset += xsize;
+				x += xsize;
+			} while (x < width);
+			y++;
+			linecount--;
+		} else {
+			uint32_t n = fetchbits_unsigned(data, bitoffset, 3) + 2;
+			bitoffset += 3;
+			uint32_t x = 0;
+			do {
+				uint32_t xsize = width - x;
+				if (xsize > 32) xsize = 32;
+				//Serial.printf("    multi line %d\n", n);
+				uint32_t bits = fetchbits_unsigned(data, bitoffset, xsize);
+				drawT3FontBits(bits, xsize, origin_x + x, y, n);
+				bitoffset += xsize;
+				x += xsize;
+			} while (x < width);
+			y += n;
+			linecount -= n;
+		}
+		//if (++loopcount > 100) {
+			//Serial.println("     abort draw loop");
+			//break;
+		//}
+	}
+}
+
+void Adafruit_GFX::drawT3FontBits(uint32_t bits, uint32_t numbits, uint32_t x, uint32_t y, uint32_t repeat)
+{
+#if 0
+	// TODO: replace this *slow* code with something fast...
+	//Serial.printf("      %d bits at %d,%d: %X\n", numbits, x, y, bits);
+	if (bits == 0) return;
+	do {
+		uint32_t x1 = x;
+		uint32_t n = numbits;
+		do {
+			n--;
+			if (bits & (1 << n)) {
+				drawPixel(x1, y, textcolor);
+				//Serial.printf("        pixel at %d,%d\n", x1, y);
+			}
+			x1++;
+		} while (n > 0);
+		y++;
+		repeat--;
+	} while (repeat);
+#endif
+#if 1
+	if (bits == 0) return;
+	int w = 0;
+	do {
+		uint32_t x1 = x;
+		uint32_t n = numbits;
+		do {
+			n--;
+			if (bits & (1 << n)) {
+				w++;
+			}
+			else if (w > 0) {
+				drawFastHLine(x1 - w, y, w, textcolor);
+				w = 0;
+			}
+
+			x1++;
+		} while (n > 0);
+
+		if (w > 0) {
+			drawFastHLine(x1 - w, y, w, textcolor);
+			w = 0;
+		}
+
+		y++;
+		repeat--;
+	} while (repeat);
+#endif
 }
 
 /**************************************************************************/
@@ -1319,6 +1527,22 @@ void Adafruit_GFX::setFont(const GFXfont *f) {
 }
 
 
+void Adafruit_GFX::setT3Font(const ILI9341_t3_font_t *f) {
+    if(f) {            // Font struct pointer passed in?
+        if(!gfxFont && !t3font) { // And no current font struct?
+            // Switching from classic to new font behavior.
+            // Move cursor pos down 6 pixels so it's on baseline.
+            cursor_y += 6;
+        }
+    } else if(gfxFont || t3font) { // NULL passed.  Current font struct defined?
+        // Switching from new to classic font behavior.
+        // Move cursor pos up 6 pixels so it's at top-left of char.
+        cursor_y -= 6;
+    }
+    t3font = f;
+}
+
+
 /**************************************************************************/
 /*!
     @brief    Helper to determine size of a character with current font/size.
@@ -1335,7 +1559,63 @@ void Adafruit_GFX::setFont(const GFXfont *f) {
 void Adafruit_GFX::charBounds(char c, int16_t *x, int16_t *y,
   int16_t *minx, int16_t *miny, int16_t *maxx, int16_t *maxy) {
 
-    if(gfxFont) {
+	if(t3font) {
+        if(c == '\n') { // Newline?
+            *x  = 0;    // Reset x to zero, advance y by one line
+            *y += textsize * t3font->line_space;
+        } else if(c != '\r') { // Not a carriage return; is normal char
+			uint32_t bitoffset;
+			const uint8_t *data;
+			ILI9341_t3_font_t const *font = t3font;
+
+			//				Serial.printf("char %c(%d)\n", c,c);
+
+			if (c >= font->index1_first && c <= font->index1_last) {
+				bitoffset = c - font->index1_first;
+				bitoffset *= font->bits_index;
+			} else if (c >= font->index2_first && c <= font->index2_last) {
+				bitoffset = c - font->index2_first + font->index1_last - font->index1_first + 1;
+				bitoffset *= font->bits_index;
+			} else if (font->unicode) {
+				return;
+			} else {
+				return;
+			}
+			//Serial.printf("  index =  %d\n", fetchbits_unsigned(font->index, bitoffset, font->bits_index));
+			data = font->data + fetchbits_unsigned(font->index, bitoffset, font->bits_index);
+
+			uint32_t encoding = fetchbits_unsigned(data, 0, 3);
+			if (encoding != 0) return;
+			uint32_t width = fetchbits_unsigned(data, 3, font->bits_width);
+			bitoffset = font->bits_width + 3;
+			uint32_t height = fetchbits_unsigned(data, bitoffset, font->bits_height);
+			bitoffset += font->bits_height;
+			//Serial.printf("  size =   %d,%d\n", width, height);
+
+			int32_t xoffset = fetchbits_signed(data, bitoffset, font->bits_xoffset);
+			bitoffset += font->bits_xoffset;
+			int32_t yoffset = fetchbits_signed(data, bitoffset, font->bits_yoffset);
+			bitoffset += font->bits_yoffset;
+			//Serial.printf("  offset = %d,%d\n", xoffset, yoffset);
+
+			uint32_t delta = fetchbits_unsigned(data, bitoffset, font->bits_delta);
+			bitoffset += font->bits_delta;
+			//Serial.printf("  delta =  %d\n", delta);
+
+			int16_t x1 = *x + xoffset;
+			int16_t y1 = *y + yoffset;
+			int16_t x2 = x1 + height - 1;
+			int16_t y2 = y1 + width - 1;
+
+			if(x1 < *minx) *minx = x1;
+			if(y1 < *miny) *miny = y1;
+			if(x2 > *maxx) *maxx = x2;
+			if(y2 > *maxy) *maxy = y2;
+
+			*x += delta;
+		}
+
+	} else if(gfxFont) {
 
         if(c == '\n') { // Newline?
             *x  = 0;    // Reset x to zero, advance y by one line

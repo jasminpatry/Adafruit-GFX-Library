@@ -8,6 +8,9 @@
  #include "WProgram.h"
 #endif
 #include "gfxfont.h"
+#include "ILI9341_t3.h"
+
+
 
 /// A generic graphics superclass that can handle all sorts of drawing. At a minimum you can subclass and provide drawPixel(). At a maximum you can do a ton of overriding to optimize. Used for any/all Adafruit displays!
 class Adafruit_GFX : public Print {
@@ -102,6 +105,7 @@ class Adafruit_GFX : public Print {
     setTextWrap(boolean w),
     cp437(boolean x=true),
     setFont(const GFXfont *f = NULL),
+    setT3Font(const ILI9341_t3_font_t *f),
     getTextBounds(const char *string, int16_t x, int16_t y,
       int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h),
     getTextBounds(const __FlashStringHelper *s, int16_t x, int16_t y,
@@ -128,7 +132,9 @@ class Adafruit_GFX : public Print {
  protected:
   void
     charBounds(char c, int16_t *x, int16_t *y,
-      int16_t *minx, int16_t *miny, int16_t *maxx, int16_t *maxy);
+      int16_t *minx, int16_t *miny, int16_t *maxx, int16_t *maxy),
+    drawT3FontChar(unsigned int c),
+    drawT3FontBits(uint32_t bits, uint32_t numbits, uint32_t x, uint32_t y, uint32_t repeat);
   const int16_t
     WIDTH,          ///< This is the 'raw' display width - never changes
     HEIGHT;         ///< This is the 'raw' display height - never changes
@@ -148,6 +154,8 @@ class Adafruit_GFX : public Print {
     _cp437;         ///< If set, use correct CP437 charset (default is off)
   GFXfont
     *gfxFont;       ///< Pointer to special font
+  ILI9341_t3_font_t
+    const *t3font;  ///< Teensy3.x font
 };
 
 
