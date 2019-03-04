@@ -2165,6 +2165,126 @@ void GFXcanvas8::writeFastHLine(int16_t x, int16_t y,
     memset(buffer + y * WIDTH + x, color, w);
 }
 
+// AA line helpers
+
+static float ipart(float f)
+{
+	return floorf(f);
+}
+
+static float fpart(float f)
+{
+	return f - floorf(f);
+}
+
+static float rfpart(float f)
+{
+	return 1.0f - fpart(f);
+}
+
+static int iround(float f)
+{
+	return roundf(f);
+}
+
+void GFXcanvas8::drawPixelAa(
+	int16_t x,
+	int16_t y,
+	float u,
+	uint8_t colorBlack,
+	uint8_t color)
+{
+	// BB (jasminp) sqrt to approximate inverse display gamma. Could precompute LUT instead.
+
+	drawPixel(x, y, colorBlack + iround(sqrtf(u) * (color - colorBlack)));
+}
+
+void GFXcanvas8::writeLineAntialiased(
+	float x0,
+	float y0,
+	float x1,
+	float y1,
+	uint8_t colorBlack,
+	uint8_t color)
+{
+	// AA line algorithm from https://en.wikipedia.org/wiki/Xiaolin_Wu%27s_line_algorithm
+
+	bool steep = fabs(y1 - y0) > fabs(x1 - x0);
+	if (steep)
+	{
+		swap(x0, y0);
+		swap(x1, y1);
+	}
+
+	if (x0 > x1)
+	{
+		swap(x0, x1);
+		swap(y0, y1);
+	}
+
+	float dx = x1 - x0;
+	float dy = y1 - y0;
+	float gradient = dy / dx;
+	if (dx == 0)
+		gradient = 1.0f;
+
+	// handle first endpoint
+	int xend = round(x0);
+	float yend = y0 + gradient * (xend - x0);
+	float xgap = rfpart(x0 + 0.5f);
+	int xpxl1 = xend; // this will be used in the main loop
+	int ypxl1 = ipart(yend);
+	if (steep)
+	{
+		drawPixelAa(ypxl1, xpxl1, rfpart(yend) * xgap, colorBlack, color);
+		drawPixelAa(ypxl1+1, xpxl1, fpart(yend) * xgap, colorBlack, color);
+	}
+	else
+	{
+		drawPixelAa(xpxl1, ypxl1, rfpart(yend) * xgap, colorBlack, color);
+		drawPixelAa(xpxl1, ypxl1+1, fpart(yend) * xgap, colorBlack, color);
+	}
+
+	float intery = yend + gradient; // first y-intersection for the main loop
+
+	// handle second endpoint
+	xend = round(x1);
+	yend = y1 + gradient * (xend - x1);
+	xgap = fpart(x1 + 0.5);
+	int xpxl2 = xend; //this will be used in the main loop
+	int ypxl2 = ipart(yend);
+	if (steep)
+	{
+		drawPixelAa(ypxl2, xpxl2, rfpart(yend) * xgap, colorBlack, color);
+		drawPixelAa(ypxl2+1, xpxl2, fpart(yend) * xgap, colorBlack, color);
+	}
+	else
+	{
+		drawPixelAa(xpxl2, ypxl2, rfpart(yend) * xgap, colorBlack, color);
+		drawPixelAa(xpxl2, ypxl2+1, fpart(yend) * xgap, colorBlack, color);
+	}
+
+	// main loop
+	if (steep)
+	{
+		for (int x = xpxl1 + 1; x < xpxl2; ++x)
+		{
+			drawPixelAa(ipart(intery), x, rfpart(intery), colorBlack, color);
+			drawPixelAa(ipart(intery)+1, x, fpart(intery), colorBlack, color);
+			intery = intery + gradient;
+		}
+	}
+	else
+	{
+		for (int x = xpxl1 + 1; x < xpxl2; ++x)
+		{
+			drawPixelAa(x, ipart(intery), rfpart(intery), colorBlack, color);
+			drawPixelAa(x, ipart(intery)+1, fpart(intery), colorBlack, color);
+			intery = intery + gradient;
+		}
+	}
+}
+
 /**************************************************************************/
 /*!
    @brief    Instatiate a GFX 16-bit canvas context for graphics

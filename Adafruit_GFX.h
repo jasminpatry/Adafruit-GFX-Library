@@ -212,10 +212,12 @@ class GFXcanvas8 : public Adafruit_GFX {
   ~GFXcanvas8(void);
   void     drawPixel(int16_t x, int16_t y, uint16_t color),
            fillScreen(uint16_t color),
-           writeFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color);
+           writeFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color),
+           writeLineAntialiased(float x0, float y0, float x1, float y1, const uint8_t colorBlack, uint8_t color);
 
   uint8_t *getBuffer(void);
  private:
+  void drawPixelAa(int16_t x, int16_t y, float u, const uint8_t colorBlack, uint8_t color);
   uint8_t *buffer;
 };
 
