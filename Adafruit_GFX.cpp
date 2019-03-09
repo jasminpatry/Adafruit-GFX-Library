@@ -2224,12 +2224,14 @@ void GFXcanvas8::writeLineAntialiased(
 
 	float dx = x1 - x0;
 	float dy = y1 - y0;
-	float gradient = dy / dx;
-	if (dx == 0)
+	float gradient;
+	if (dx != 0.0f)
+		gradient = dy / dx;
+	else
 		gradient = 1.0f;
 
 	// handle first endpoint
-	int xend = round(x0);
+	int xend = roundf(x0);
 	float yend = y0 + gradient * (xend - x0);
 	float xgap = rfpart(x0 + 0.5f);
 	int xpxl1 = xend; // this will be used in the main loop
@@ -2248,9 +2250,9 @@ void GFXcanvas8::writeLineAntialiased(
 	float intery = yend + gradient; // first y-intersection for the main loop
 
 	// handle second endpoint
-	xend = round(x1);
+	xend = roundf(x1);
 	yend = y1 + gradient * (xend - x1);
-	xgap = fpart(x1 + 0.5);
+	xgap = fpart(x1 + 0.5f);
 	int xpxl2 = xend; //this will be used in the main loop
 	int ypxl2 = ipart(yend);
 	if (steep)
