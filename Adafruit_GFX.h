@@ -112,7 +112,7 @@ class Adafruit_GFX : public Print {
       int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h),
     getTextBounds(const String &str, int16_t x, int16_t y,
       int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h);
-
+	int16_t strPixelLen(const char * str);
 
 #if ARDUINO >= 100
   virtual size_t write(uint8_t);

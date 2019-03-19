@@ -1760,6 +1760,93 @@ void Adafruit_GFX::getTextBounds(const __FlashStringHelper *str,
     }
 }
 
+// Copied from ILI9341_t3, with some fixes & gfxFont support added
+
+int16_t Adafruit_GFX::strPixelLen(const char * str)
+{
+//	Serial.printf("strPixelLen %s\n", str);
+	if (!str) return(0);
+	uint16_t len=0, maxlen=0;
+	while (*str)
+	{
+		if (*str=='\n')
+		{
+			len=0;
+		}
+		else
+		{
+			if (t3font)
+			{
+				ILI9341_t3_font_t const *font = t3font;
+
+				uint32_t bitoffset;
+				const uint8_t *data;
+				uint16_t c = *str;
+
+//				Serial.printf("char %c(%d)\n", c,c);
+
+				if (c >= font->index1_first && c <= font->index1_last) {
+					bitoffset = c - font->index1_first;
+					bitoffset *= font->bits_index;
+				} else if (c >= font->index2_first && c <= font->index2_last) {
+					bitoffset = c - font->index2_first + font->index1_last - font->index1_first + 1;
+					bitoffset *= font->bits_index;
+				} else if (font->unicode) {
+					continue;
+				} else {
+					continue;
+				}
+				//Serial.printf("  index =  %d\n", fetchbits_unsigned(font->index, bitoffset, font->bits_index));
+				data = font->data + fetchbits_unsigned(font->index, bitoffset, font->bits_index);
+
+				uint32_t encoding = fetchbits_unsigned(data, 0, 3);
+				if (encoding != 0) continue;
+//				uint32_t width = fetchbits_unsigned(data, 3, font->bits_width);
+//				Serial.printf("  width =  %d\n", width);
+				bitoffset = font->bits_width + 3;
+				bitoffset += font->bits_height;
+
+//				int32_t xoffset = fetchbits_signed(data, bitoffset, font->bits_xoffset);
+//				Serial.printf("  xoffset =  %d\n", xoffset);
+				bitoffset += font->bits_xoffset;
+				bitoffset += font->bits_yoffset;
+
+				uint32_t delta = fetchbits_unsigned(data, bitoffset, font->bits_delta);
+				bitoffset += font->bits_delta;
+//				Serial.printf("  delta =  %d\n", delta);
+
+				len += delta;//+width-xoffset;
+//				Serial.printf("  len =  %d\n", len);
+			}
+			else if (gfxFont)
+			{
+				int16_t x = 0;
+				int16_t y = 0;
+				int16_t minx = 0;
+				int16_t miny = 0;
+				int16_t maxx = 0;
+				int16_t maxy = 0;
+
+				charBounds(*str, &x, &y, &minx, &miny, &maxx, &maxy);
+				len += x;
+			}
+			else
+			{
+				len+=textsize*6;
+			}
+
+			if ( len > maxlen )
+			{
+				maxlen=len;
+//				Serial.printf("  maxlen =  %d\n", maxlen);
+			}
+		}
+		str++;
+	}
+//	Serial.printf("Return  maxlen =  %d\n", maxlen);
+	return( maxlen );
+}
+
 /**************************************************************************/
 /*!
     @brief      Get width of the display, accounting for the current rotation
